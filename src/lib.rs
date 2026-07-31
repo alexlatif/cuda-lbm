@@ -18,6 +18,7 @@ pub struct HandwrittenD3q19 {
     _context: Arc<CudaContext>,
     stream: Arc<CudaStream>,
     function: CudaFunction,
+    ptx: String,
     input: CudaSlice<f32>,
     output: CudaSlice<f32>,
     cells: u64,
@@ -38,6 +39,7 @@ impl HandwrittenD3q19 {
         let source = specialized_kernel(n, block)?;
         let context = CudaContext::new(device).context("create CUDA context")?;
         let ptx = nvrtc::compile_ptx(source).context("NVRTC compile handwritten D3Q19")?;
+        let ptx_source = ptx.to_src();
         let module = context
             .load_module(ptx)
             .context("load handwritten D3Q19 module")?;
@@ -55,12 +57,21 @@ impl HandwrittenD3q19 {
             _context: context,
             stream,
             function,
+            ptx: ptx_source,
             input,
             output,
             cells: cells as u64,
             block,
             omega,
         })
+    }
+
+    /// Return the exact NVRTC-produced PTX image loaded for this adapter.
+    ///
+    /// The comparison harness may persist this as diagnostic evidence; JXRS
+    /// never receives ownership of or executes this image.
+    pub fn ptx(&self) -> &str {
+        &self.ptx
     }
 
     /// Replace state with an identical host fixture before a paired trial.
