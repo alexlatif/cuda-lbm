@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result, bail};
 use cudarc::{
-    driver::{CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg},
+    driver::{CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg, sys},
     nvrtc,
 };
 use std::sync::Arc;
@@ -103,10 +103,13 @@ impl HandwrittenD3q19 {
         }
         let start = self
             .stream
-            .record_event(None)
+            .record_event(Some(sys::CUevent_flags::CU_EVENT_DEFAULT))
             .context("record start event")?;
         self.launch_steps(steps)?;
-        let end = self.stream.record_event(None).context("record end event")?;
+        let end = self
+            .stream
+            .record_event(Some(sys::CUevent_flags::CU_EVENT_DEFAULT))
+            .context("record end event")?;
         end.synchronize().context("synchronize end event")?;
         self._context
             .bind_to_thread()
