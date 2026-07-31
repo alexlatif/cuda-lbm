@@ -38,7 +38,9 @@ impl HandwrittenD3q19 {
         let source = specialized_kernel(n, block)?;
         let context = CudaContext::new(device).context("create CUDA context")?;
         let ptx = nvrtc::compile_ptx(source).context("NVRTC compile handwritten D3Q19")?;
-        let module = context.load_module(ptx).context("load handwritten D3Q19 module")?;
+        let module = context
+            .load_module(ptx)
+            .context("load handwritten D3Q19 module")?;
         let function = module
             .load_function("cuda_lbm_step")
             .context("load cuda_lbm_step")?;
@@ -99,10 +101,16 @@ impl HandwrittenD3q19 {
         if steps == 0 {
             bail!("measurement requires at least one step");
         }
-        let start = self.stream.record_event(None).context("record start event")?;
+        let start = self
+            .stream
+            .record_event(None)
+            .context("record start event")?;
         self.launch_steps(steps)?;
         let end = self.stream.record_event(None).context("record end event")?;
         end.synchronize().context("synchronize end event")?;
+        self._context
+            .bind_to_thread()
+            .context("bind handwritten CUDA context for event elapsed time")?;
         let elapsed_ms = start.elapsed_ms(&end).context("elapsed CUDA events")?;
         Ok(((f64::from(elapsed_ms) * 1_000_000.0) / steps as f64).round() as u64)
     }
@@ -165,7 +173,14 @@ mod tests {
         let first = specialized_kernel(64, 256).unwrap();
         let second = specialized_kernel(64, 256).unwrap();
         assert_eq!(first, second);
-        for token in ["{{N}}", "{{MASK}}", "{{LOG2_N}}", "{{LOG2_PLANE}}", "{{CELLS}}", "{{BLOCK}}"] {
+        for token in [
+            "{{N}}",
+            "{{MASK}}",
+            "{{LOG2_N}}",
+            "{{LOG2_PLANE}}",
+            "{{CELLS}}",
+            "{{BLOCK}}",
+        ] {
             assert!(!first.contains(token), "unresolved token {token}");
         }
         assert!(first.contains("#define LBM_CELLS 262144"));
