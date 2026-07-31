@@ -9,9 +9,36 @@ use cudarc::{
     driver::{CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg, sys},
     nvrtc,
 };
-use std::sync::Arc;
+use std::{path::Path, process::Command, sync::Arc};
 
 pub const Q: usize = 19;
+
+/// Static compiler evidence for the independently owned handwritten kernel.
+#[derive(Debug, Clone)]
+pub struct HandwrittenAssemblyEvidence {
+    cubin: Vec<u8>,
+    ptxas_stdout: String,
+    ptxas_stderr: String,
+    sass: String,
+}
+
+impl HandwrittenAssemblyEvidence {
+    pub fn cubin(&self) -> &[u8] {
+        &self.cubin
+    }
+
+    pub fn ptxas_stdout(&self) -> &str {
+        &self.ptxas_stdout
+    }
+
+    pub fn ptxas_stderr(&self) -> &str {
+        &self.ptxas_stderr
+    }
+
+    pub fn sass(&self) -> &str {
+        &self.sass
+    }
+}
 
 /// A compile-time-specialized handwritten D3Q19 step running on one CUDA stream.
 pub struct HandwrittenD3q19 {
@@ -72,6 +99,59 @@ impl HandwrittenD3q19 {
     /// never receives ownership of or executes this image.
     pub fn ptx(&self) -> &str {
         &self.ptx
+    }
+
+    /// Assemble and disassemble the exact PTX as diagnostic evidence.
+    ///
+    /// The resulting cubin is never loaded by JXRS or used for paired timing.
+    pub fn assembly_evidence(
+        &self,
+        ptxas: impl AsRef<Path>,
+        cuobjdump: impl AsRef<Path>,
+        architecture: &str,
+    ) -> Result<HandwrittenAssemblyEvidence> {
+        if architecture.is_empty()
+            || !architecture
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            bail!("invalid CUDA architecture label");
+        }
+        let scratch = tempfile::tempdir().context("create handwritten diagnostic workspace")?;
+        let ptx_path = scratch.path().join("handwritten.ptx");
+        let cubin_path = scratch.path().join("handwritten.cubin");
+        std::fs::write(&ptx_path, &self.ptx).context("write handwritten diagnostic PTX")?;
+        let assembly = Command::new(ptxas.as_ref())
+            .arg(format!("--gpu-name={architecture}"))
+            .arg("--verbose")
+            .arg("--output-file")
+            .arg(&cubin_path)
+            .arg(&ptx_path)
+            .output()
+            .context("invoke ptxas for handwritten diagnostic evidence")?;
+        if !assembly.status.success() {
+            bail!(
+                "ptxas rejected handwritten PTX: {}",
+                String::from_utf8_lossy(&assembly.stderr).trim()
+            );
+        }
+        let disassembly = Command::new(cuobjdump.as_ref())
+            .arg("-sass")
+            .arg(&cubin_path)
+            .output()
+            .context("invoke cuobjdump for handwritten diagnostic evidence")?;
+        if !disassembly.status.success() {
+            bail!(
+                "cuobjdump rejected handwritten cubin: {}",
+                String::from_utf8_lossy(&disassembly.stderr).trim()
+            );
+        }
+        Ok(HandwrittenAssemblyEvidence {
+            cubin: std::fs::read(&cubin_path).context("read handwritten diagnostic cubin")?,
+            ptxas_stdout: String::from_utf8_lossy(&assembly.stdout).into_owned(),
+            ptxas_stderr: String::from_utf8_lossy(&assembly.stderr).into_owned(),
+            sass: String::from_utf8_lossy(&disassembly.stdout).into_owned(),
+        })
     }
 
     /// Replace state with an identical host fixture before a paired trial.
