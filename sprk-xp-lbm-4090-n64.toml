@@ -1,0 +1,35 @@
+[service]
+kind = "func"
+
+[build]
+binary = "cuda-lbm"
+
+[target]
+provider = "vast"
+gpu_arch = "ada"
+gpu_type = "RTX 4090"
+gpu_memory = "24GiB"
+gpu_count = 1
+node_count = 1
+min_cuda_version = 12.6
+cuda_version = "12060"
+compute_cap = "89"
+destroy_after = true
+require_datacenter = false
+min_reliability = 0.95
+max_price = 1.0
+cost_cap_usd = 1.0
+max_lifetime_secs = 1200
+
+[experiment]
+name = "d3q19_lbm_handwritten_nvrtc_n64_4090"
+version = "0.1.0"
+
+[env]
+LBM_N = "64"
+LBM_WARMUP = "20"
+LBM_STEPS = "2000"
+LBM_BLOCK = "256"
+LBM_RESULT = "/workspace/cuda-lbm-result.json"
+LBM_MARKERS = "/workspace/cuda-lbm-markers.json"
+LBM_POWER = "/workspace/cuda-lbm-power.csv"

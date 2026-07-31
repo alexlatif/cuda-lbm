@@ -1,0 +1,11 @@
+[package]
+name = "cuda-lbm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+cudarc = { version = "=0.18.1", default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12060"] }
+libc = "0.2"
+nvml-wrapper = "0.11"
+serde_json = "1"
